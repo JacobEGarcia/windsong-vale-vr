@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>WINDSONG VALE - a painterly valley adventure in VR</title>
+<meta name="description" content="A hand-painted, Ghibli-inspired 3D valley to explore - on desktop and in Quest VR. Restore the three sun shards, wake the shrine bell.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Nunito:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root { --paper:#f7f0e1; --ink:#4a4038; --sun:#e2703a; --leaf:#5c8a4d; --sky:#7fb4d8; --plum:#7a4a5e; }
+  html,body { margin:0; padding:0; height:100%; overflow:hidden; background:#f7f0e1; font-family:'Nunito',sans-serif; }
+  #app { position:fixed; inset:0; }
+  canvas { display:block; }
+  #vignette { position:fixed; inset:0; pointer-events:none; z-index:5;
+    background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 66%, rgba(74,64,56,.16) 100%); }
+  #hurt { position:fixed; inset:0; pointer-events:none; z-index:6; opacity:0; transition:opacity .18s;
+    background:radial-gradient(ellipse at 50% 50%, rgba(180,40,30,0) 55%, rgba(180,40,30,.42) 100%); }
+  #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(58,50,44,.5); z-index:20; transition:opacity .6s ease; }
+  #overlay.hidden { opacity:0; pointer-events:none; }
+  .card { max-width:600px; width:92%; background:var(--paper); color:var(--ink); border:2.5px solid var(--ink);
+    border-radius:14px; padding:30px 40px 26px; box-shadow:9px 11px 0 rgba(58,50,44,.25); }
+  .fig { display:flex; justify-content:space-between; font-size:12px; letter-spacing:.08em; color:#8b7f6e; text-transform:uppercase; }
+  h1 { margin:6px 0 0; font-family:'Caveat',cursive; font-size:58px; font-weight:700; color:var(--sun); line-height:1; }
+  .sub { margin:2px 0 14px; font-size:14px; color:#8b7f6e; font-style:italic; }
+  .howto { font-size:14px; line-height:1.75; border-top:1.5px dashed #c9bda6; border-bottom:1.5px dashed #c9bda6; padding:12px 0; margin-bottom:18px; }
+  .howto b { color:var(--sun); }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .pill { appearance:none; cursor:pointer; background:var(--paper); color:var(--ink);
+    font-family:'Nunito',sans-serif; font-weight:700; font-size:14px; letter-spacing:.05em;
+    padding:11px 24px; border:2px solid var(--ink); border-radius:999px; transition:all .12s; }
+  .pill:hover { background:var(--ink); color:var(--paper); }
+  .pill.primary { background:var(--sun); border-color:var(--sun); color:#fff; }
+  .pill.primary:hover { background:#c65c2c; }
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; display:none; }
+  #hearts { position:absolute; left:26px; top:22px; font-size:26px; letter-spacing:6px;
+    text-shadow:0 2px 0 rgba(58,50,44,.35); }
+  #shards { position:absolute; right:26px; top:22px; text-align:right; color:#fff; text-shadow:0 2px 3px rgba(58,50,44,.55); }
+  #shards .k { font-size:11px; letter-spacing:.3em; }
+  #shards .v { font-size:30px; font-weight:700; line-height:1.05; }
+  #objective { position:absolute; left:50%; top:20px; transform:translateX(-50%); max-width:70%;
+    background:rgba(247,240,225,.92); color:var(--ink); border:2px solid var(--ink); border-radius:999px;
+    font-size:13.5px; font-weight:600; padding:8px 22px; box-shadow:0 3px 0 rgba(58,50,44,.25); }
+  #timer { position:absolute; right:26px; top:96px; color:#fff; opacity:.85; font-size:13px; text-shadow:0 1px 2px rgba(58,50,44,.6); letter-spacing:.1em; }
+  #toast { position:fixed; left:50%; bottom:11%; transform:translateX(-50%); z-index:15; pointer-events:none;
+    background:var(--paper); color:var(--ink); border:2px solid var(--ink); border-radius:14px;
+    font-size:15px; font-weight:600; padding:12px 26px; opacity:0; transition:opacity .4s; max-width:76%; text-align:center;
+    box-shadow:5px 6px 0 rgba(58,50,44,.25); }
+  #toast.show { opacity:1; }
+  #crosshair { position:fixed; left:50%; top:50%; width:6px; height:6px; margin:-3px; border-radius:50%;
+    background:rgba(247,240,225,.9); box-shadow:0 0 0 2px rgba(58,50,44,.45); z-index:9; display:none; }
+  #winstats { font-size:15px; line-height:2; margin:6px 0 16px; }
+  #winstats b { color:var(--sun); font-size:18px; }
+  #vrbutton-holder button { position:static !important; }
+  #mute { position:fixed; right:22px; bottom:20px; z-index:16; }
+  .tiny { font-size:12px; color:#8b7f6e; margin-top:12px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="vignette"></div>
+<div id="hurt"></div>
+<div id="crosshair"></div>
+<div id="hud">
+  <div id="hearts">&#10084;&#10084;&#10084;</div>
+  <div id="shards"><div class="k">SUN SHARDS</div><div class="v"><span id="shard-n">0</span><small style="font-size:16px;opacity:.7"> / 3</small></div></div>
+  <div id="objective">Follow the wisp - find the meadow shard</div>
+  <div id="timer">0:00</div>
+</div>
+<div id="toast"></div>
+<div id="overlay">
+  <div class="card" id="start-card">
+    <div class="fig"><span>A painterly valley</span><span>No. 2</span></div>
+    <h1>Windsong Vale</h1>
+    <p class="sub">the shrine bell has gone quiet - three sun shards will wake it</p>
+    <div class="howto">
+      <b>Desktop:</b> click to look around, <b>WASD</b> to walk, <b>click</b> to swing your wooden sword.<br>
+      <b>Quest VR:</b> left stick to walk, right stick to turn, <b>swing your arm or squeeze the trigger</b> to strike.<br>
+      Follow the little lantern wisp. Gather the <b>3 sun shards</b>, bring them to the forest shrine, and face what wakes there.
+    </div>
+    <div class="row">
+      <button class="pill primary" id="play">Wander in</button>
+      <span id="vrbutton-holder"></span>
+    </div>
+    <p class="tiny">An original world - hand-painted light, no borrowed characters. Headphones on for the wind.</p>
+  </div>
+  <div class="card" id="win-card" style="display:none">
+    <div class="fig"><span>The bell rings again</span><span>Fin</span></div>
+    <h1>The Vale Sings</h1>
+    <p class="sub">Bramblehorn bows his mossy head. Warm light spills over the hilltown.</p>
+    <div id="winstats"></div>
+    <div class="row"><button class="pill primary" id="again">Wander again</button></div>
+  </div>
+</div>
+<button class="pill" id="mute">wind: on</button>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+// ---------- renderer / scene ----------
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+renderer.xr.enabled = true;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xf2d9b0, 55, 210);
+
+const camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.08, 500);
+const rig = new THREE.Group();          // player rig (moves in world)
+rig.add(camera);
+scene.add(rig);
+
+// golden-hour light
+const hemi = new THREE.HemisphereLight(0xfff3d8, 0x8fa36b, 0.85);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffe3ae, 2.0);
+sun.position.set(-60, 55, 35);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -90; sun.shadow.camera.right = 90;
+sun.shadow.camera.top = 90; sun.shadow.camera.bottom = -90;
+sun.shadow.camera.far = 260; sun.shadow.bias = -0.0015;
+scene.add(sun); scene.add(sun.target);
+const fill = new THREE.DirectionalLight(0xbfd9e8, 0.35);
+fill.position.set(50, 30, -60); scene.add(fill);
+
+// ---------- toon gradient ----------
+const grad = new THREE.DataTexture(new Uint8Array([90, 160, 220, 255]), 4, 1, THREE.RedFormat);
+grad.minFilter = grad.magFilter = THREE.NearestFilter; grad.needsUpdate = true;
+function toon(color, opts={}) {
+  return new THREE.MeshToonMaterial(Object.assign({ color, gradientMap: grad }, opts));
+}
+
+// ---------- painterly canvas textures ----------
+function paintTex(size, base, blotches, strokes) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d');
+  g.fillStyle = base; g.fillRect(0,0,size,size);
+  for (let i=0;i<blotches;i++) {
+    const r = 8+Math.random()*size/7, x = Math.random()*size, y = Math.random()*size;
+    const hue = Math.random()*26-13, li = Math.random()*22-11;
+    g.globalAlpha = 0.05+Math.random()*0.09;
+    g.fillStyle = shift(base, hue, li);
+    g.beginPath(); g.ellipse(x,y,r,r*(0.55+Math.random()*0.5),Math.random()*Math.PI,0,7); g.fill();
+  }
+  g.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function shift(hex, h, l) {
+  const c = new THREE.Color(hex); const hsl = {}; c.getHSL(hsl);
+  c.setHSL((hsl.h + h/360 + 1)%1, THREE.MathUtils.clamp(hsl.s,0,1), THREE.MathUtils.clamp(hsl.l + l/100,0,1));
+  return '#'+c.getHexString();
+}
+const grassTex = paintTex(256, '#7fae5c', 90);
+const dirtTex  = paintTex(256, '#c8a06a', 80);
+const stoneTex = paintTex(256, '#b9b2a4', 70);
+const roofTex  = paintTex(256, '#c96f4a', 60);
+const wallTex  = paintTex(256, '#f2e7cf', 50);
+const barkTex  = paintTex(128, '#8a6a4e', 60);
+
+// ---------- sky dome ----------
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite:false, fog:false,
+  uniforms: { top:{value:new THREE.Color(0x7fb4d8)}, mid:{value:new THREE.Color(0xf7d9a8)}, low:{value:new THREE.Color(0xf9e8c8)}, t:{value:0} },
+  vertexShader: 'varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: `varying vec3 vP; uniform vec3 top,mid,low;
+    void main(){ float h=normalize(vP).y;
+      vec3 c = h>0.12 ? mix(mid,top,smoothstep(0.12,0.75,h)) : mix(low,mid,smoothstep(-0.08,0.12,h));
+      gl_FragColor = vec4(c,1.0); }`
+});
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(420, 32, 20), skyMat));
+
+// sun disc + halo
+const sunSpr = new THREE.Mesh(new THREE.CircleGeometry(18, 32),
+  new THREE.MeshBasicMaterial({ color:0xfff2c8, fog:false, transparent:true, opacity:0.95 }));
+sunSpr.position.set(-260, 190, 150); sunSpr.lookAt(0,0,0); scene.add(sunSpr);
+const halo = new THREE.Mesh(new THREE.CircleGeometry(46, 32),
+  new THREE.MeshBasicMaterial({ color:0xffe9b0, fog:false, transparent:true, opacity:0.28, depthWrite:false }));
+halo.position.copy(sunSpr.position).multiplyScalar(1.001); halo.lookAt(0,0,0); scene.add(halo);
+
+// puffy sprite clouds
+function cloudTexture() {
+  const c = document.createElement('canvas'); c.width=256; c.height=128; const g=c.getContext('2d');
+  for (let i=0;i<14;i++){ const x=40+Math.random()*176, y=44+Math.random()*44, r=18+Math.random()*26;
+    const gr=g.createRadialGradient(x,y,2,x,y,r); gr.addColorStop(0,'rgba(255,252,246,.85)'); gr.addColorStop(1,'rgba(255,252,246,0)');
+    g.fillStyle=gr; g.beginPath(); g.arc(x,y,r,0,7); g.fill(); }
+  return new THREE.CanvasTexture(c);
+}
+const cloudTex = cloudTexture();
+const clouds = [];
+for (let i=0;i<10;i++){
+  const m = new THREE.Sprite(new THREE.SpriteMaterial({ map:cloudTex, transparent:true, opacity:0.5+Math.random()*0.35, depthWrite:false, fog:false }));
+  const s = 60+Math.random()*70; m.scale.set(s, s*0.42, 1);
+  m.position.set(-300+Math.random()*600, 95+Math.random()*70, -300+Math.random()*600);
+  scene.add(m); clouds.push(m);
+}
+
+// ---------- terrain ----------
+const WORLD = 300, SEG = 150;
+// path polyline: start -> meadow -> arch -> up the hill -> town; and a branch east to the shrine
+const PATH = [ [0,72],[2,55],[-3,38],[8,22],[10,10],[4,-8],[-2,-30],[0,-55],[2,-78],[0,-94] ];
+const PATH2 = [ [4,-8],[22,-4],[40,-6],[56,-8],[68,-16],[78,-28],[82,-34] ];
+function distToPath(x,z,pts){
+  let best = 1e9;
+  for (let i=0;i<pts.length-1;i++){
+    const [ax,az]=pts[i], [bx,bz]=pts[i+1];
+    const dx=bx-ax, dz=bz-az, L2=dx*dx+dz*dz;
+    let t = L2? ((x-ax)*dx+(z-az)*dz)/L2 : 0; t = Math.max(0,Math.min(1,t));
+    const px=ax+t*dx, pz=az+t*dz, d=Math.hypot(x-px,z-pz);
+    if (d<best) best=d;
+  }
+  return best;
+}
+function baseH(x,z){
+  let h = 2.0*Math.sin(x*0.045)*Math.cos(z*0.038) + 1.0*Math.sin(x*0.11+1.7)*Math.cos(z*0.09+0.6);
+  h += 8.5*Math.exp(-((x*x)+(z+96)*(z+96))/1100);            // town hill
+  h += 3.2*Math.exp(-(((x-78)**2)+((z+30)**2))/800);         // shrine knoll
+  h += 1.6*Math.exp(-(((x-40)**2)+((z-35)**2))/500);         // big-tree mound
+  h *= 0.55*Math.min(1, Math.hypot(x,z-60)/26) + 0.45;       // calm meadow bowl at start
+  return h;
+}
+function terrainH(x,z){
+  let h = baseH(x,z);
+  const d = Math.min(distToPath(x,z,PATH), distToPath(x,z,PATH2));
+  if (d < 7) { const w = 1 - d/7; h = h*(1-w*0.75) + (h*0.4)*w*0.75; } // packed dirt sits flatter
+  return h;
+}
+const terraGeo = new THREE.PlaneGeometry(WORLD, WORLD, SEG, SEG);
+terraGeo.rotateX(-Math.PI/2);
+{
+  const pos = terraGeo.attributes.position;
+  const cols = new Float32Array(pos.count*3);
+  const cGrass = new THREE.Color(0x7fae5c), cGrass2 = new THREE.Color(0x94c168),
+        cDirt = new THREE.Color(0xc8a06a), cMeadow = new THREE.Color(0x8fbf6a), cForest = new THREE.Color(0x5d8f52);
+  for (let i=0;i<pos.count;i++){
+    const x = pos.getX(i), z = pos.getZ(i);
+    pos.setY(i, terrainH(x,z));
+    const n = Math.sin(x*0.23)*Math.cos(z*0.19)*0.5+0.5;
+    const c = cGrass.clone().lerp(cGrass2, n).lerp(cMeadow, Math.max(0, 1-Math.hypot(x,z-45)/70)*0.5);
+    if (x>35) c.lerp(cForest, Math.min(1,(x-35)/40)*0.55);   // deeper green toward the woods
+    const d = Math.min(distToPath(x,z,PATH), distToPath(x,z,PATH2));
+    if (d < 3.4) c.lerp(cDirt, 1-(d/3.4)*0.55);
+    else if (d < 6) c.lerp(cDirt, (1-(d-3.4)/2.6)*0.22);
+    cols[i*3]=c.r; cols[i*3+1]=c.g; cols[i*3+2]=c.b;
+  }
+  terraGeo.setAttribute('color', new THREE.BufferAttribute(cols,3));
+  terraGeo.computeVertexNormals();
+}
+const terrain = new THREE.Mesh(terraGeo, toon(0xffffff, { vertexColors:true, map:grassTex }));
+terrain.receiveShadow = true;
+grassTex.repeat.set(40,40);
+scene.add(terrain);
+
+// ---------- grass & flowers (instanced, wind-swayed) ----------
+const SWAY = (mat, amp) => {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = { value: 0 }; mat.userData.sh = sh;
+    sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+       #ifdef USE_INSTANCING
+         vec4 ip = instanceMatrix * vec4(0.,0.,0.,1.);
+         float sway = sin(uTime*1.7 + ip.x*0.35 + ip.z*0.28) * ${amp} * position.y;
+         transformed.x += sway; transformed.z += sway*0.6;
+       #endif`);
+  };
+};
+function scatter(mesh, count, placer) {
+  const d = new THREE.Object3D();
+  let placed = 0, guard = 0;
+  while (placed < count && guard++ < count*40) {
+    const p = placer(); if (!p) continue;
+    d.position.set(p.x, terrainH(p.x,p.z), p.z);
+    d.rotation.y = Math.random()*Math.PI*2;
+    const s = p.s || 1; d.scale.set(s,s,s);
+    d.updateMatrix(); mesh.setMatrixAt(placed++, d.matrix);
+  }
+  mesh.count = placed; mesh.instanceMatrix.needsUpdate = true;
+  scene.add(mesh); return mesh;
+}
+const notPath = (x,z,m=4.5) => Math.min(distToPath(x,z,PATH), distToPath(x,z,PATH2)) > m;
+// keep quest-critical clearings free of random props
+const QUEST_CLEAR = [ [0,62,7],[10,5,7],[10,8,6],[-6,-89,8],[2,-93,6],[78,-30,8],[82,-34,9],[82,-27,7],[66,-16,4],[58,-8,4],[72,-24,4],[8,14,4],[13,10,4],[0,-88,4],[-7,-95,4] ];
+const nearQuest = (x,z) => QUEST_CLEAR.some(([qx,qz,qr]) => Math.hypot(x-qx,z-qz) < qr);
+const inWorld = (x,z,r=146) => Math.hypot(x,z) < r;
+
+const grassMat = new THREE.MeshLambertMaterial({ color:0x86b95f, side:THREE.DoubleSide, alphaTest:0.5 });
+SWAY(grassMat, 0.10);
+const bladeGeo = new THREE.PlaneGeometry(0.55, 0.9, 1, 2); bladeGeo.translate(0,0.45,0);
+// paint a grass-tuft alpha texture
+{
+  const c=document.createElement('canvas'); c.width=c.height=64; const g=c.getContext('2d');
+  g.clearRect(0,0,64,64); g.strokeStyle='#fff'; g.lineCap='round';
+  for (let i=0;i<7;i++){ g.lineWidth=3.5-Math.abs(3-i)*0.4; g.beginPath();
+    g.moveTo(8+i*8, 64); g.quadraticCurveTo(8+i*8+(Math.random()*10-5), 34, 8+i*8+(Math.random()*16-8), 6+Math.random()*14); g.stroke(); }
+  const t=new THREE.CanvasTexture(c); grassMat.map=t; grassMat.transparent=false;
+}
+const grass = new THREE.InstancedMesh(bladeGeo, grassMat, 5200);
+scatter(grass, 5200, () => {
+  const x=(Math.random()*2-1)*145, z=(Math.random()*2-1)*145;
+  if (!inWorld(x,z) || !notPath(x,z,3.2)) return null;
+  if (nearQuest(x,z) || Math.hypot(x,z+96)<17 || Math.hypot(x-78,z+30)<13) return null;   // keep quest clearings open
+  return { x, z, s:0.7+Math.random()*0.9 };
+});
+grass.receiveShadow = true;
+
+const flowerGeo = new THREE.PlaneGeometry(0.28,0.28); flowerGeo.translate(0,0.34,0);
+const flowerMats = [0xf6e27a, 0xf2a7c3, 0xffffff, 0xe2703a].map(c =>
+  new THREE.MeshLambertMaterial({ color:c, side:THREE.DoubleSide }));
+flowerMats.forEach(m=>SWAY(m,0.06));
+for (const fm of flowerMats) {
+  const f = new THREE.InstancedMesh(flowerGeo, fm, 160);
+  scatter(f, 160, () => {
+    const x=(Math.random()*2-1)*130, z=(Math.random()*2-1)*130;
+    if (!inWorld(x,z) || !notPath(x,z,3.6) || x>40) return null;
+    return { x, z, s:0.8+Math.random()*0.6 };
+  });
+}
+
+// ---------- trees ----------
+const colliders = [];   // {x,z,r}
+function addCollider(x,z,r){ colliders.push({x,z,r}); }
+const trunkMat = toon(0x8a6a4e, { map:barkTex });
+function makeTree(x, z, s=1, hueShift=0) {
+  const g = new THREE.Group();
+  const h = terrainH(x,z);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28*s, 0.5*s, 2.6*s, 7), trunkMat);
+  trunk.position.y = 1.3*s; trunk.castShadow = true; g.add(trunk);
+  const leafCol = shift('#5c8a4d', hueShift, Math.random()*8-2);
+  const leafMat = toon(new THREE.Color(leafCol));
+  const blobs = 2+Math.floor(Math.random()*2);
+  for (let i=0;i<blobs;i++){
+    const r = (1.5+Math.random()*0.9)*s;
+    const b = new THREE.Mesh(new THREE.IcosahedronGeometry(r,1), leafMat);
+    b.position.set((Math.random()-0.5)*1.6*s, (2.6+i*0.9)*s, (Math.random()-0.5)*1.6*s);
+    b.scale.y = 0.82; b.castShadow = true; g.add(b);
+  }
+  g.position.set(x,h,z); scene.add(g);
+  addCollider(x,z,0.7*s);
+  return g;
+}
+// forest band east + scattered west trees
+for (let i=0;i<46;i++){
+  const x = 42+Math.random()*95, z = -70+Math.random()*130;
+  if (!inWorld(x,z) || !notPath(x,z,4) || nearQuest(x,z) || Math.hypot(x-78,z+30)<12) continue;
+  makeTree(x,z, 0.9+Math.random()*0.9, Math.random()*30);
+}
+for (let i=0;i<16;i++){
+  const x = -130+Math.random()*150, z = -60+Math.random()*160;
+  if (!inWorld(x,z) || !notPath(x,z,5) || nearQuest(x,z) || Math.hypot(x,z+96)<20 || Math.hypot(x,z-45)<16) continue;
+  makeTree(x,z, 0.8+Math.random()*0.8, Math.random()*30);
+}
+// the great camphor tree - landmark
+{
+  const big = makeTree(40, 35, 3.1, 8);
+  big.children.forEach(c=>{ if(c.geometry && c.geometry.type==='IcosahedronGeometry') c.scale.y=0.7; });
+  addCollider(40,35,2.4);
+}
+// rocks
+const rockMat = toon(0xb9b2a4, { map:stoneTex });
+for (let i=0;i<22;i++){
+  const x=(Math.random()*2-1)*135, z=(Math.random()*2-1)*135;
+  if (!inWorld(x,z) || !notPath(x,z,3.6) || nearQuest(x,z)) continue;
+  const r = 0.4+Math.random()*1.1;
+  const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(r,0), rockMat);
+  rock.position.set(x, terrainH(x,z)+r*0.3, z);
+  rock.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3);
+  rock.scale.y = 0.7; rock.castShadow = rock.receiveShadow = true;
+  scene.add(rock);
+  if (r>0.8) addCollider(x,z,r*0.85);
+}
+
+// ---------- hilltown ----------
+const wallMat = toon(0xf2e7cf, { map:wallTex });
+const roofMat = toon(0xc96f4a, { map:roofTex });
+const woodMat = toon(0x9c7a54, { map:barkTex });
+function makeHouse(x, z, rot, w=4.4, d=3.8, h=2.7) {
+  const g = new THREE.Group();
+  const y = terrainH(x,z);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), wallMat);
+  base.position.y = h/2; base.castShadow = base.receiveShadow = true; g.add(base);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w,d)*0.62, h*0.85, 4), roofMat);
+  roof.position.y = h + h*0.42; roof.rotation.y = Math.PI/4; roof.castShadow = true; g.add(roof);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.9,1.5,0.1), woodMat);
+  door.position.set(0, 0.75, d/2+0.03); g.add(door);
+  const win = new THREE.Mesh(new THREE.BoxGeometry(0.8,0.8,0.08), toon(0xffe9a8, { emissive:0xffc76a, emissiveIntensity:0.7 }));
+  win.position.set(w*0.26, h*0.6, d/2+0.03); g.add(win);
+  const win2 = win.clone(); win2.position.x = -w*0.26; g.add(win2);
+  g.position.set(x,y,z); g.rotation.y = rot;
+  scene.add(g);
+  addCollider(x,z,Math.max(w,d)*0.62);
+  return g;
+}
+makeHouse(-8, -90, 0.5); makeHouse(9, -92, -0.6, 5,4.2,3); makeHouse(-5, -103, 2.6);
+makeHouse(11, -102, -2.2, 4,3.6,2.5); makeHouse(-14, -97, 1.1, 3.8,3.4,2.5); makeHouse(2, -108, 3.1);
+
+// windmill
+const windmill = new THREE.Group();
+{
+  const x = 17, z = -97, y = terrainH(x,z);
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.1, 7.5, 8), wallMat);
+  tower.position.y = 3.75; tower.castShadow = true; windmill.add(tower);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(2.0, 1.8, 8), roofMat);
+  cap.position.y = 8.3; cap.castShadow = true; windmill.add(cap);
+  const hub = new THREE.Group(); hub.position.set(0, 7.2, 1.9);
+  for (let i=0;i<4;i++){
+    const blade = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 4.6), toon(0xf6ecd6, { side:THREE.DoubleSide }));
+    blade.position.y = 2.3;
+    const arm = new THREE.Group(); arm.rotation.z = i*Math.PI/2; arm.add(blade); hub.add(arm);
+  }
+  const hubCap = new THREE.Mesh(new THREE.SphereGeometry(0.4,8,8), woodMat); hub.add(hubCap);
+  windmill.add(hub); windmill.userData.hub = hub;
+  windmill.position.set(x,y,z); windmill.rotation.y = -0.5;
+  scene.add(windmill); addCollider(x,z,2.3);
+}
+// well (town square center)
+{
+  const x=2, z=-93, y=terrainH(x,z);
+  const well = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.2,0.9,10,1,true), toon(0xb9b2a4,{map:stoneTex, side:THREE.DoubleSide}));
+  ring.position.y=0.45; ring.castShadow=true; well.add(ring);
+  const roofp = new THREE.Mesh(new THREE.ConeGeometry(1.5,0.9,6), roofMat);
+  roofp.position.y=2.3; roofp.castShadow=true; well.add(roofp);
+  for (const sx of [-0.9,0.9]) { const post=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,1.6,6),woodMat); post.position.set(sx,1.2,0); well.add(post); }
+  well.position.set(x,y,z); scene.add(well); addCollider(x,z,1.5);
+}
+// fences along the hill path
+function fence(x,z,rot,len=3){
+  const g=new THREE.Group();
+  for (let i=0;i<len;i++){ const p=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.9,0.12),woodMat); p.position.set(i*0.75,0.45,0); p.castShadow=true; g.add(p); }
+  const rail=new THREE.Mesh(new THREE.BoxGeometry(len*0.75,0.09,0.09),woodMat); rail.position.set((len-1)*0.375,0.62,0); g.add(rail);
+  g.position.set(x,terrainH(x,z),z); g.rotation.y=rot; scene.add(g);
+}
+fence(-3,-70,0.15); fence(5,-64,-0.2); fence(-4,-80,0.3); fence(6,-86,-0.4);
+// lantern posts
+const lanternMat = toon(0xffd98a, { emissive:0xffb84d, emissiveIntensity:1.2 });
+const lanterns = [];
+for (const [x,z] of [[0,64],[9,14],[-1,-34],[3,-76],[60,-10],[76,-26]]){
+  const y = terrainH(x,z);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.12,2.4,6), woodMat);
+  post.position.set(x,y+1.2,z); post.castShadow=true; scene.add(post);
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22,8,8), lanternMat);
+  lamp.position.set(x,y+2.5,z); scene.add(lamp); lanterns.push(lamp);
+}
+// ---------- meadow ruin arch ----------
+{
+  const x=10, z=8, y=terrainH(x,z);
+  const archMat = toon(0xcfc8b8, { map:stoneTex });
+  const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.9,3.6,0.9), archMat);
+  p1.position.set(x-1.7, y+1.8, z); p1.castShadow = p1.receiveShadow = true;
+  const p2 = p1.clone(); p2.position.x = x+1.7;
+  const top = new THREE.Mesh(new THREE.BoxGeometry(4.6,0.8,1.1), archMat);
+  top.position.set(x, y+3.9, z); top.rotation.z = 0.03; top.castShadow = true;
+  scene.add(p1,p2,top);
+  addCollider(x-1.7,z,0.8); addCollider(x+1.7,z,0.8);
+}
+// ---------- forest shrine ----------
+const shrine = new THREE.Group();
+const SHRINE_POS = { x:82, z:-34 };
+{
+  const {x,z} = SHRINE_POS, y = terrainH(x,z);
+  const steps = new THREE.Mesh(new THREE.CylinderGeometry(3.4,3.9,0.5,8), toon(0xb9b2a4,{map:stoneTex}));
+  steps.position.y = 0.25; steps.receiveShadow = true; shrine.add(steps);
+  for (const [sx,sz] of [[-2.2,-2.2],[2.2,-2.2],[-2.2,2.2],[2.2,2.2]]){
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.26,3.0,7), woodMat);
+    p.position.set(sx,2.0,sz); p.castShadow=true; shrine.add(p);
+  }
+  const sroof = new THREE.Mesh(new THREE.ConeGeometry(4.2,2.0,4), roofMat);
+  sroof.position.y = 4.4; sroof.rotation.y = Math.PI/4; sroof.castShadow = true; shrine.add(sroof);
+  // the bell
+  const bell = new THREE.Mesh(new THREE.ConeGeometry(0.55,0.9,10), toon(0xd8b25a,{ emissive:0x6a4a10, emissiveIntensity:0.25 }));
+  bell.position.y = 3.1; shrine.add(bell); shrine.userData.bell = bell;
+  // altar
+  const altar = new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.1,0.8,8), toon(0xcfc8b8,{map:stoneTex}));
+  altar.position.y = 0.9; altar.receiveShadow = true; shrine.add(altar);
+  shrine.position.set(x,y,z); scene.add(shrine);
+  addCollider(x-2.2,z-2.2,0.5); addCollider(x+2.2,z-2.2,0.5); addCollider(x-2.2,z+2.2,0.5); addCollider(x+2.2,z+2.2,0.5);
+}
+// ---------- ambient life ----------
+// birds
+const birds = [];
+{
+  const bMat = new THREE.LineBasicMaterial({ color:0x4a4038, transparent:true, opacity:0.75 });
+  for (let i=0;i<7;i++){
+    const g = new THREE.BufferGeometry().setFromPoints([ new THREE.Vector3(-0.5,0,0), new THREE.Vector3(0,0.18,0), new THREE.Vector3(0.5,0,0) ]);
+    const b = new THREE.Line(g, bMat);
+    b.userData = { r:60+Math.random()*60, h:38+Math.random()*22, sp:0.05+Math.random()*0.06, ph:Math.random()*7 };
+    scene.add(b); birds.push(b);
+  }
+}
+// pollen motes
+let pollen;
+{
+  const N=400, pos=new Float32Array(N*3);
+  for (let i=0;i<N;i++){ pos[i*3]=(Math.random()*2-1)*120; pos[i*3+1]=Math.random()*14+1; pos[i*3+2]=(Math.random()*2-1)*120; }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  pollen = new THREE.Points(g, new THREE.PointsMaterial({ color:0xfff2c8, size:0.12, transparent:true, opacity:0.65, sizeAttenuation:true }));
+  scene.add(pollen);
+}
+// butterflies near the meadow
+const butterflies = [];
+{
+  const wing = new THREE.PlaneGeometry(0.22,0.16);
+  const cols = [0xf2a7c3, 0xf6e27a, 0xa8d3e6];
+  for (let i=0;i<9;i++){
+    const g = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color:cols[i%3], side:THREE.DoubleSide, emissive:cols[i%3], emissiveIntensity:0.25 });
+    const w1 = new THREE.Mesh(wing,m); w1.position.x=-0.1; const w2 = new THREE.Mesh(wing,m); w2.position.x=0.1;
+    g.add(w1,w2); g.userData={ cx:(Math.random()*2-1)*40, cz:20+Math.random()*40, r:3+Math.random()*6, sp:0.4+Math.random()*0.5, ph:Math.random()*7, w1, w2 };
+    scene.add(g); butterflies.push(g);
+  }
+}
+
+// ---------- audio (tiny procedural wind/chimes) ----------
+let AC = null, muted = false, windGain = null;
+function audio() {
+  if (AC) return AC;
+  AC = new (window.AudioContext||window.webkitAudioContext)();
+  const buf = AC.createBuffer(1, AC.sampleRate*2, AC.sampleRate);
+  const d = buf.getChannelData(0); let v=0;
+  for (let i=0;i<d.length;i++){ v = v*0.98 + (Math.random()*2-1)*0.02; d[i]=v*3; }
+  const src = AC.createBufferSource(); src.buffer=buf; src.loop=true;
+  const f = AC.createBiquadFilter(); f.type='bandpass'; f.frequency.value=320; f.Q.value=0.6;
+  windGain = AC.createGain(); windGain.gain.value=0.05;
+  src.connect(f).connect(windGain).connect(AC.destination); src.start();
+  return AC;
+}
+function chime(freq=880, dur=0.5, vol=0.16, type='sine') {
+  if (muted || !audio()) return;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type=type; o.frequency.value=freq;
+  g.gain.setValueAtTime(vol, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime+dur);
+  o.connect(g).connect(AC.destination); o.start(); o.stop(AC.currentTime+dur);
+}
+const sfx = {
+  swing(){ chime(220+Math.random()*60, 0.12, 0.05, 'triangle'); },
+  hit(){ chime(140, 0.18, 0.2, 'square'); chime(90, 0.25, 0.15, 'sawtooth'); },
+  shard(){ [660,880,1320].forEach((f,i)=>setTimeout(()=>chime(f,0.7,0.14), i*90)); },
+  hurt(){ chime(110, 0.3, 0.22, 'sawtooth'); },
+  bell(){ [392,523,659,784].forEach((f,i)=>setTimeout(()=>chime(f,2.2,0.16), i*260)); },
+  step(){ chime(80+Math.random()*30, 0.05, 0.02, 'triangle'); },
+};
+document.getElementById('mute').onclick = () => {
+  muted = !muted; document.getElementById('mute').textContent = muted ? 'wind: off' : 'wind: on';
+  if (windGain) windGain.gain.value = muted ? 0 : 0.05;
+};
+
+// ---------- player ----------
+const player = {
+  pos: new THREE.Vector3(0, 0, 62),
+  yaw: Math.PI,            // facing -z (north, toward the vale)
+  pitch: 0, vy: 0,
+  hearts: 3, shards: 0, lastHurt: -99, swings:0, hitsTaken:0,
+  speed: 5.2, started: false, dead: false,
+};
+function eyeY(){ return terrainH(player.pos.x, player.pos.z) + 1.62; }
+
+// sword view model (desktop) / controller mesh (VR)
+const sword = new THREE.Group();
+{
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.045,0.72,0.11), toon(0xb98a5e,{map:barkTex}));
+  blade.position.y = 0.42; sword.add(blade);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.045,0.16), toon(0x6a4a30));
+  guard.position.y = 0.06; sword.add(guard);
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.035,0.16,6), toon(0x4a4038));
+  grip.position.y = -0.04; sword.add(grip);
+  const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.16), new THREE.MeshLambertMaterial({color:0x5c8a4d, side:THREE.DoubleSide}));
+  leaf.position.set(0.05,0.12,0); leaf.rotation.z=0.6; sword.add(leaf);
+}
+sword.scale.setScalar(0.62);
+sword.position.set(0.34,-0.36,-0.6);
+const SWORD_REST = [-0.85,-0.2,-0.18];
+sword.rotation.set(...SWORD_REST);
+camera.add(sword);
+let swingT = -1;
+function swing() {
+  if (swingT >= 0 || player.dead) return false;
+  swingT = 0; player.swings++; sfx.swing();
+  return true;
+}
+
+// desktop pointer-lock controls
+const keys = {};
+const canvas = renderer.domElement;
+let pointerLocked = false;
+canvas.addEventListener('click', () => {
+  if (!player.started || renderer.xr.isPresenting) return;
+  if (!pointerLocked) { canvas.requestPointerLock(); return; }
+  swing();
+});
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = document.pointerLockElement === canvas;
+  document.getElementById('crosshair').style.display = pointerLocked ? 'block' : 'none';
+});
+document.addEventListener('mousemove', (e) => {
+  if (!pointerLocked) return;
+  player.yaw   -= e.movementX * 0.0022;
+  player.pitch -= e.movementY * 0.0022;
+  player.pitch = THREE.MathUtils.clamp(player.pitch, -1.2, 1.2);
+});
+addEventListener('keydown', e => { keys[e.code]=true; if (e.code==='Space') swing(); });
+addEventListener('keyup',   e => { keys[e.code]=false; });
+
+// ---------- VR setup ----------
+const vrBtn = VRButton.createButton(renderer);
+document.getElementById('vrbutton-holder').appendChild(vrBtn);
+vrBtn.style.cssText += ';position:static !important;margin:0 !important;';
+let vrSword = null, lastSwingVel = 0, prevCtrlPos = null;
+renderer.xr.addEventListener('sessionstart', () => {
+  sword.visible = false;
+  const ctrl = renderer.xr.getController(1);      // right hand
+  if (!vrSword) { vrSword = sword.clone(); }
+  ctrl.add(vrSword); vrSword.position.set(0,0,-0.02); vrSword.rotation.set(-0.9,0,0);
+  ctrl.addEventListener('selectstart', () => swing());
+  rig.position.copy(player.pos); rig.position.y = eyeY() - 1.62 + 0; // rig at feet-ish; camera local handles eye
+  rig.position.y = terrainH(player.pos.x, player.pos.z);
+  startGame();
+});
+renderer.xr.addEventListener('sessionend', () => {
+  sword.visible = true;
+  if (vrSword && vrSword.parent) vrSword.parent.remove(vrSword);
+});
+
+// ---------- thorn sprites (enemies) ----------
+const spriteBodyMat = toon(0x3d3350);
+const eyeMat = new THREE.MeshBasicMaterial({ color:0xfff6e0 });
+const petalMat = new THREE.MeshBasicMaterial({ color:0xf2a7c3, side:THREE.DoubleSide, transparent:true });
+const enemies = [];
+function makeThornSprite(x, z, elite=false) {
+  const g = new THREE.Group();
+  const s = elite ? 1.5 : 1;
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.55*s,1), spriteBodyMat.clone());
+  body.castShadow = true; g.add(body);
+  // thorn spikes
+  for (let i=0;i<7;i++){
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.09*s,0.4*s,5), body.material);
+    const dir = new THREE.Vector3().randomDirection(); dir.y = Math.abs(dir.y)*0.6;
+    spike.position.copy(dir).multiplyScalar(0.55*s);
+    spike.lookAt(dir.clone().multiplyScalar(2)); spike.rotateX(Math.PI/2);
+    g.add(spike);
+  }
+  for (const sx of [-0.18,0.18]){
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.09*s,6,6), eyeMat);
+    eye.position.set(sx*s, 0.1*s, 0.48*s); g.add(eye);
+  }
+  const y = terrainH(x,z);
+  g.position.set(x, y+1.0*s, z);
+  scene.add(g);
+  const e = { g, home:new THREE.Vector3(x,y,z), hp: elite?4:3, state:'drift', ph:Math.random()*7,
+              lungeCd:0, flash:0, dead:false, elite, s, petals:[] };
+  enemies.push(e); return e;
+}
+// shard guards
+makeThornSprite(8, 14); makeThornSprite(13, 10);                    // meadow arch
+makeThornSprite(0, -88); makeThornSprite(-7, -95);                  // town square
+makeThornSprite(58, -8); makeThornSprite(66, -16); makeThornSprite(72, -24, true); // forest path
+// free-roamers
+makeThornSprite(-20, 30); makeThornSprite(30, 50); makeThornSprite(-30, -10);
+
+const petals = [];
+function burstPetal(pos, n=10) {
+  for (let i=0;i<n;i++){
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(0.14,0.2), petalMat);
+    p.position.copy(pos);
+    p.userData = { v:new THREE.Vector3((Math.random()-0.5)*3, 2+Math.random()*2.5, (Math.random()-0.5)*3), life:1 };
+    p.rotation.set(Math.random()*3,Math.random()*3,0);
+    scene.add(p); petals.push(p);
+  }
+}
+function killEnemy(e) {
+  e.dead = true; burstPetal(e.g.position, e.elite?18:10);
+  sfx.hit();
+  scene.remove(e.g);
+}
+
+// ---------- boss: Bramblehorn ----------
+const boss = { g:null, hp:8, active:false, dead:false, chargeT:0, cd:0, ph:0 };
+function spawnBoss() {
+  const g = new THREE.Group();
+  const moss = toon(0x4d6b3f);
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9,1), moss);
+  body.position.y = 2.0; body.castShadow = true; g.add(body);
+  const mask = new THREE.Mesh(new THREE.SphereGeometry(0.85,10,8), toon(0xe8e0cc));
+  mask.position.set(0,2.3,1.55); mask.scale.set(1,1.25,0.55); g.add(mask);
+  for (const sx of [-0.3,0.3]){
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.13,6,6), new THREE.MeshBasicMaterial({color:0xe2703a}));
+    eye.position.set(sx,2.45,2.0); g.add(eye);
+  }
+  // antlers
+  const antlerMat = toon(0x8a6a4e,{map:barkTex});
+  for (const sx of [-1,1]){
+    const a1 = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.12,2.2,5), antlerMat);
+    a1.position.set(sx*0.8,3.6,0.6); a1.rotation.z = sx*-0.55; g.add(a1);
+    const a2 = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.08,1.3,5), antlerMat);
+    a2.position.set(sx*1.5,4.3,0.6); a2.rotation.z = sx*-1.0; g.add(a2);
+  }
+  // moss tufts
+  for (let i=0;i<6;i++){
+    const t = new THREE.Mesh(new THREE.ConeGeometry(0.3,0.7,5), toon(0x6b8f4a));
+    t.position.set((Math.random()-0.5)*2.4, 3.4+Math.random()*0.5, (Math.random()-0.5)*1.6);
+    g.add(t);
+  }
+  const {x,z} = SHRINE_POS;
+  g.position.set(x, terrainH(x,z), z+7);
+  scene.add(g);
+  boss.g = g; boss.active = true; boss.hp = 8; boss.home = g.position.clone();
+  toast('The moss guardian Bramblehorn rises - defend the shrine!');
+  chime(65, 2.0, 0.3, 'sawtooth');
+}
+
+// ---------- sun shards ----------
+const shardMat = toon(0xffd75e, { emissive:0xffaa22, emissiveIntensity:1.4 });
+const shardSpots = [ {x:10,z:5,label:'meadow'}, {x:-6,z:-89,label:'hilltown'}, {x:78,z:-30,label:'forest'} ];
+const shards = [];
+for (const s of shardSpots){
+  const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.42,0), shardMat);
+  const y = terrainH(s.x,s.z);
+  m.position.set(s.x, y+1.4, s.z);
+  const glow = new THREE.PointLight(0xffc76a, 6, 9); m.add(glow);
+  scene.add(m);
+  shards.push({ m, x:s.x, z:s.z, baseY:y+1.4, got:false, label:s.label });
+}
+// ---------- lantern wisp guide ----------
+const wisp = new THREE.Group();
+{
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.14,8,8),
+    new THREE.MeshBasicMaterial({ color:0xffe9a8 }));
+  const glowTex = cloudTexture();
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex, color:0xffd98a, transparent:true, opacity:0.85, depthWrite:false }));
+  glow.scale.set(1.6,1.6,1);
+  wisp.add(core, glow); scene.add(wisp);
+}
+function currentObjective() {
+  if (!shards[0].got) return { x:shardSpots[0].x, z:shardSpots[0].z, text:'Follow the wisp - find the meadow shard by the old arch' };
+  if (!shards[1].got) return { x:shardSpots[1].x, z:shardSpots[1].z, text:'Climb the hill - a shard glows in the town square' };
+  if (!shards[2].got) return { x:shardSpots[2].x, z:shardSpots[2].z, text:'The last shard waits on the forest path, past the lanterns' };
+  if (!boss.active && !boss.dead) return { x:SHRINE_POS.x, z:SHRINE_POS.z, text:'Bring the shards to the forest shrine' };
+  if (boss.active && !boss.dead) return { x:boss.g.position.x, z:boss.g.position.z, text:'Face Bramblehorn!' };
+  return null;
+}
+
+// ---------- HUD / quest ----------
+const hud = document.getElementById('hud'), heartsEl = document.getElementById('hearts'),
+      shardN = document.getElementById('shard-n'), objEl = document.getElementById('objective'),
+      timerEl = document.getElementById('timer'), toastEl = document.getElementById('toast'),
+      hurtEl = document.getElementById('hurt'), overlay = document.getElementById('overlay');
+let toastTimer = null;
+function toast(msg, ms=3400){
+  toastEl.textContent = msg; toastEl.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>toastEl.classList.remove('show'), ms);
+}
+function updateHearts(){ heartsEl.textContent = '\u2764'.repeat(Math.max(0,player.hearts)) + '\u2661'.repeat(Math.max(0,3-player.hearts)); }
+let startTime = 0, won = false;
+function startGame(){
+  if (player.started) return;
+  player.started = true; startTime = performance.now();
+  overlay.classList.add('hidden'); hud.style.display = 'block';
+  audio(); if (AC && AC.state==='suspended') AC.resume();
+  toast('The lantern wisp flickers north. Follow it.', 4200);
+}
+document.getElementById('play').onclick = () => { startGame(); if (!renderer.xr.isPresenting) canvas.requestPointerLock(); };
+document.getElementById('again').onclick = () => location.reload();
+
+function hurtPlayer(from){
+  if (performance.now()/1000 - player.lastHurt < 1.0 || won) return;
+  player.lastHurt = performance.now()/1000;
+  player.hearts--; player.hitsTaken++; updateHearts(); sfx.hurt();
+  hurtEl.style.opacity = 1; setTimeout(()=>hurtEl.style.opacity = 0, 240);
+  if (from){ const push = player.pos.clone().sub(from).setY(0).normalize().multiplyScalar(2.2); player.pos.add(push); }
+  if (player.hearts <= 0){
+    player.hearts = 3; updateHearts();
+    player.pos.set(0,0,62); player.yaw = Math.PI;
+    toast('The vale catches you gently... back at the meadow gate.', 4200);
+  }
+}
+
+// ---------- combat resolution ----------
+const pendingHits = [];
+function facingDir(){
+  const d = new THREE.Vector3();
+  camera.getWorldDirection(d); d.y = 0;
+  return d.lengthSq() ? d.normalize() : new THREE.Vector3(0,0,-1);
+}
+function resolveSwing(){
+  const f = facingDir();
+  const origin = new THREE.Vector3(); camera.getWorldPosition(origin);
+  let hitAny = false;
+  for (const e of enemies){
+    if (e.dead) continue;
+    const to = e.g.position.clone().sub(origin); to.y = 0;
+    const dist = to.length();
+    if (dist > 2.6) continue;
+    if (to.normalize().angleTo(f) > 1.15) continue;
+    e.hp--; e.flash = 0.18; hitAny = true;
+    e.g.position.add(f.clone().multiplyScalar(0.8));
+    if (e.hp<=0) killEnemy(e); else sfx.hit();
+  }
+  if (boss.active && !boss.dead){
+    const to = boss.g.position.clone().sub(origin); to.y = 0;
+    if (to.length() < 3.6 && to.normalize().angleTo(f) < 1.15){
+      boss.hp--; hitAny = true; sfx.hit();
+      boss.g.position.add(f.clone().multiplyScalar(0.4));
+      boss.g.children[0].material = boss.g.children[0].material.clone();
+      boss.g.children[0].material.emissive = new THREE.Color(0xffffff);
+      boss.g.children[0].material.emissiveIntensity = 0.6;
+      setTimeout(()=>{ boss.g.children[0].material.emissiveIntensity = 0; }, 120);
+      if (boss.hp<=0) winGame();
+    }
+  }
+  return hitAny;
+}
+function winGame(){
+  boss.dead = true; boss.active = false; won = true;
+  burstPetal(boss.g.position.clone().add(new THREE.Vector3(0,2,0)), 30);
+  scene.remove(boss.g);
+  sfx.bell();
+  shrine.userData.bell.rotation.z = 0.3;
+  const glow = new THREE.PointLight(0xffe9a8, 60, 60);
+  glow.position.copy(shrine.position).add(new THREE.Vector3(0,6,0)); scene.add(glow);
+  const t = Math.floor((performance.now()-startTime)/1000);
+  const mm = Math.floor(t/60), ss = String(t%60).padStart(2,'0');
+  document.getElementById('winstats').innerHTML =
+    `time wandering <b>${mm}:${ss}</b><br>sword swings <b>${player.swings}</b><br>hits taken <b>${player.hitsTaken}</b>`;
+  setTimeout(()=>{
+    overlay.classList.remove('hidden');
+    document.getElementById('start-card').style.display='none';
+    document.getElementById('win-card').style.display='block';
+    hud.style.display = 'none';
+    if (document.pointerLockElement) document.exitPointerLock();
+  }, 1600);
+}
+
+// ---------- movement ----------
+const tmpV = new THREE.Vector3();
+function collide(p){
+  for (const c of colliders){
+    const dx = p.x-c.x, dz = p.z-c.z, d = Math.hypot(dx,dz);
+    if (d < c.r && d > 1e-4){ const k = (c.r-d)/d; p.x += dx*k; p.z += dz*k; }
+  }
+  const r = Math.hypot(p.x,p.z);
+  if (r > 140){ p.x *= 140/r; p.z *= 140/r; }
+}
+function updatePlayer(dt){
+  const xr = renderer.xr.isPresenting;
+  let mx = 0, mz = 0;
+  if (!xr && pointerLocked){
+    if (keys.KeyW) mz -= 1; if (keys.KeyS) mz += 1;
+    if (keys.KeyA) mx -= 1; if (keys.KeyD) mx += 1;
+    if (keys.ShiftLeft) { mx*=1.6; mz*=1.6; }
+  }
+  if (xr){
+    const session = renderer.xr.getSession();
+    if (session) for (const src of session.inputSources){
+      if (!src.gamepad) continue;
+      const ax = src.gamepad.axes;
+      const x = ax[2] ?? ax[0] ?? 0, y = ax[3] ?? ax[1] ?? 0;
+      if (src.handedness === 'left'){ mx = x; mz = y; }
+      if (src.handedness === 'right'){
+        if (Math.abs(x) > 0.7 && !snapLatch){ player.yaw -= Math.sign(x)*Math.PI/4; snapLatch = true; }
+        if (Math.abs(x) < 0.3) snapLatch = false;
+      }
+    }
+  }
+  if (mx || mz){
+    const L = Math.hypot(mx,mz); mx/=Math.max(1,L); mz/=Math.max(1,L);
+    const yaw = xr ? player.yaw + getHeadsetYaw() : player.yaw;
+    const sin = Math.sin(yaw), cos = Math.cos(yaw);
+    const wx = (mx*cos - mz*sin), wz = (mx*sin + mz*cos);
+    player.pos.x += wx * player.speed * dt;
+    player.pos.z += wz * player.speed * dt;
+    stepAcc += dt;
+    if (stepAcc > 0.42){ stepAcc = 0; sfx.step(); }
+  }
+  collide(player.pos);
+  rig.position.set(player.pos.x, terrainH(player.pos.x, player.pos.z), player.pos.z);
+  rig.rotation.y = player.yaw;
+  if (!xr){ camera.position.set(0,1.62,0); camera.rotation.set(player.pitch,0,0); }
+}
+let stepAcc = 0, snapLatch = false;
+const _hq = new THREE.Quaternion(), _hv = new THREE.Vector3();
+function getHeadsetYaw(){
+  camera.getWorldQuaternion(_hq); _hv.set(0,0,-1).applyQuaternion(_hq);
+  return Math.atan2(-_hv.x, -_hv.z) - player.yaw;
+}
+
+// VR motion swing detection
+function updateVRSwing(dt){
+  if (!renderer.xr.isPresenting) return;
+  const ctrl = renderer.xr.getController(1);
+  const p = new THREE.Vector3(); ctrl.getWorldPosition(p);
+  if (prevCtrlPos){
+    const vel = p.distanceTo(prevCtrlPos)/Math.max(dt,1e-4);
+    if (vel > 2.4 && lastSwingVel <= 2.4) swing();
+    lastSwingVel = vel;
+  }
+  prevCtrlPos = p.clone();
+}
+
+// ---------- enemies / boss update ----------
+function updateEnemies(dt, t){
+  const pp = new THREE.Vector3(); camera.getWorldPosition(pp);
+  for (const e of enemies){
+    if (e.dead) continue;
+    const g = e.g;
+    const toP = pp.clone().sub(g.position); toP.y = 0;
+    const dist = toP.length();
+    e.lungeCd -= dt;
+    if (e.flash > 0){ e.flash -= dt; g.children[0].material.emissive = new THREE.Color(0xffffff); g.children[0].material.emissiveIntensity = e.flash*4; }
+    if (dist < 13 && dist > 1.5 && e.lungeCd <= -0.6){
+      e.state = 'chase';
+      g.position.add(toP.normalize().multiplyScalar((e.elite?2.7:2.2)*dt));
+      g.lookAt(pp.x, g.position.y, pp.z);
+    } else if (dist <= 1.9 && e.lungeCd <= 0){
+      e.lungeCd = 2.2;
+      hurtPlayer(g.position);
+    } else if (e.state==='chase' && dist >= 13){ e.state='drift'; }
+    if (e.state === 'drift'){
+      g.position.x = e.home.x + Math.sin(t*0.4+e.ph)*2.2;
+      g.position.z = e.home.z + Math.cos(t*0.33+e.ph)*2.2;
+    }
+    g.position.y = terrainH(g.position.x, g.position.z) + (e.elite?1.5:1.0) + Math.sin(t*2.1+e.ph)*0.18;
+  }
+  // petals
+  for (let i=petals.length-1;i>=0;i--){
+    const p = petals[i], u = p.userData;
+    u.life -= dt*0.7; u.v.y -= 4*dt;
+    p.position.addScaledVector(u.v, dt);
+    p.rotation.x += dt*4; p.rotation.z += dt*3;
+    p.material.opacity = Math.max(0, u.life);
+    if (u.life <= 0){ scene.remove(p); petals.splice(i,1); }
+  }
+}
+function updateBoss(dt, t){
+  if (!boss.active || boss.dead) return;
+  const g = boss.g, pp = new THREE.Vector3(); camera.getWorldPosition(pp);
+  const toP = pp.clone().sub(g.position); toP.y = 0;
+  const dist = toP.length();
+  boss.cd -= dt;
+  if (boss.chargeT > 0){
+    boss.chargeT -= dt;
+    g.position.add(boss.chargeDir.clone().multiplyScalar(13*dt));
+    if (dist < 3.0 && player.lastHurt < performance.now()/1000 - 1.0) hurtPlayer(g.position);
+  } else if (boss.cd <= 0 && dist < 16){
+    boss.cd = 6; boss.chargeT = 0.75; boss.chargeDir = toP.clone().normalize();
+    chime(98, 0.8, 0.2, 'sawtooth');
+    toast('Bramblehorn charges!', 1400);
+  } else if (dist > 4.5){
+    g.position.add(toP.normalize().multiplyScalar(2.6*dt));
+  }
+  g.position.y = terrainH(g.position.x, g.position.z) + Math.sin(t*1.2)*0.1;
+  g.lookAt(pp.x, g.position.y, pp.z);
+}
+
+// ---------- shards / shrine ----------
+let shardsPlaced = false;
+function updateShards(t){
+  const pp = new THREE.Vector3(); camera.getWorldPosition(pp);
+  for (const s of shards){
+    if (s.got) continue;
+    s.m.rotation.y = t*1.4; s.m.position.y = s.baseY + Math.sin(t*2+s.x)*0.15;
+    if (pp.distanceTo(s.m.position) < 2.0){
+      s.got = true; s.m.visible = false; player.shards++;
+      shardN.textContent = player.shards; sfx.shard();
+      toast(player.shards < 3 ? `A sun shard hums warmly in your pack. (${player.shards}/3)` : 'The three shards sing together. To the forest shrine!', 3600);
+    }
+  }
+  if (player.shards >= 3 && !shardsPlaced && !boss.active && !boss.dead){
+    const d = Math.hypot(pp.x-SHRINE_POS.x, pp.z-SHRINE_POS.z);
+    if (d < 5){
+      shardsPlaced = true;
+      for (let i=0;i<3;i++){
+        const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.3,0), shardMat);
+        m.position.copy(shrine.position).add(new THREE.Vector3(Math.sin(i*2.1)*1.1, 2.0+Math.sin(t+i)*0.1, Math.cos(i*2.1)*1.1));
+        m.userData.orbit = i*2.1; scene.add(m);
+        shrine.userData['placed'+i] = m;
+      }
+      sfx.bell();
+      spawnBoss();
+    }
+  }
+  for (let i=0;i<3;i++){
+    const m = shrine.userData['placed'+i];
+    if (m){ m.userData.orbit += dt01*0.8;
+      m.position.set(shrine.position.x + Math.sin(m.userData.orbit)*1.1, shrine.position.y + 2.0 + Math.sin(t*2+i)*0.12, shrine.position.z + Math.cos(m.userData.orbit)*1.1);
+      m.rotation.y = t*2; }
+  }
+}
+
+// ---------- main loop ----------
+const clock = new THREE.Clock();
+let dt01 = 0.016, simT = 0;
+function stepGame(dt, t){
+  dt01 = dt;
+  updatePlayer(dt);
+  updateVRSwing(dt);
+  // swing animation + delayed hit
+  if (swingT >= 0){
+    swingT += dt;
+    const k = swingT/0.32;
+    if (k >= 1){ swingT = -1; pendingHits.length = 0; sword.rotation.set(...SWORD_REST); if (vrSword) vrSword.rotation.set(-0.9,0,0); }
+    else {
+      const a = Math.sin(k*Math.PI);
+      sword.rotation.set(SWORD_REST[0]-a*1.7, SWORD_REST[1]+a*0.5, SWORD_REST[2]-a*0.4);
+      if (vrSword) vrSword.rotation.set(-0.9-a*1.2,0,0);
+      if (swingT >= 0.12 && pendingHits.length===0){ pendingHits.push(1); resolveSwing(); }
+    }
+  }
+  updateEnemies(dt, t);
+  updateBoss(dt, t);
+  updateShards(t);
+  // heart regen
+  if (player.hearts < 3 && performance.now()/1000 - player.lastHurt > 10){ player.hearts++; player.lastHurt = performance.now()/1000; updateHearts(); }
+  // objective + wisp
+  const ob = currentObjective();
+  if (ob){
+    objEl.textContent = ob.text;
+    const oy = terrainH(ob.x,ob.z)+2.6;
+    wisp.visible = true;
+    wisp.position.lerp(tmpV.set(ob.x, oy+Math.sin(t*2.2)*0.3, ob.z), Math.min(1, dt*2));
+  } else wisp.visible = false;
+  const el = Math.floor((performance.now()-startTime)/1000);
+  timerEl.textContent = `${Math.floor(el/60)}:${String(el%60).padStart(2,'0')}`;
+}
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05); dt01 = dt;
+  const t = clock.elapsedTime; simT = t;
+  if (grassMat.userData.sh) grassMat.userData.sh.uniforms.uTime.value = t;
+  flowerMats.forEach(m=>{ if (m.userData.sh) m.userData.sh.uniforms.uTime.value = t; });
+  clouds.forEach((c,i)=>{ c.position.x += dt*(0.6+i*0.05); if (c.position.x > 320) c.position.x = -320; });
+  birds.forEach(b=>{ const u=b.userData, a=t*u.sp+u.ph;
+    b.position.set(Math.cos(a)*u.r, u.h+Math.sin(t*0.8+u.ph)*2, Math.sin(a)*u.r-20);
+    b.rotation.y = -a; });
+  butterflies.forEach(bf=>{ const u=bf.userData, a=t*u.sp+u.ph;
+    bf.position.set(u.cx+Math.cos(a)*u.r, terrainH(u.cx,u.cz)+1.2+Math.sin(t*1.7+u.ph)*0.5, u.cz+Math.sin(a)*u.r);
+    const flap = Math.sin(t*18+u.ph)*0.9; u.w1.rotation.y = flap; u.w2.rotation.y = -flap; });
+  pollen.rotation.y = t*0.01;
+  windmill.userData.hub.rotation.z += dt*0.7;
+  lanterns.forEach((l,i)=>{ l.material.emissiveIntensity = 1.0+Math.sin(t*3+i*1.7)*0.35; });
+  if (player.started && !won) stepGame(dt, t);
+  if (won){ shrine.userData.bell.rotation.z = Math.sin(t*6)*0.25; }
+  renderer.render(scene, camera);
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- QA hooks ----------
+window.__qa = {
+  start: startGame,
+  state: () => ({ started:player.started, hearts:player.hearts, shards:player.shards, won,
+    pos:[+player.pos.x.toFixed(1),+player.pos.z.toFixed(1)],
+    enemiesAlive: enemies.filter(e=>!e.dead).length,
+    bossActive: boss.active, bossDead: boss.dead, bossHp: boss.hp,
+    objective: objEl.textContent }),
+  teleport: (x,z,yaw) => { player.pos.set(x,0,z); if (yaw!==undefined) player.yaw=yaw;
+    rig.position.set(x, terrainH(x,z), z); camera.updateMatrixWorld(); },
+  swing: () => { swing(); },
+  killNear: (r=3) => { const pp=new THREE.Vector3(); camera.getWorldPosition(pp);
+    let n=0; for (const e of enemies){ if(!e.dead && e.g.position.distanceTo(pp)<r){ e.hp=0; killEnemy(e); n++; } } return n; },
+  lookAt: (x,z) => { const pp=new THREE.Vector3(); camera.getWorldPosition(pp);
+    player.yaw = Math.atan2(-(x-pp.x), -(z-pp.z)); rig.rotation.y = player.yaw; camera.updateMatrixWorld(); },
+  hurt: () => hurtPlayer(null),
+  bossPos: () => boss.g ? [ +boss.g.position.x.toFixed(1), +boss.g.position.z.toFixed(1) ] : null,
+  tick: (secs=0.5, step=1/60) => { let n = Math.round(secs/step);
+    for (let i=0;i<n;i++){ simT += step; stepGame(step, simT); }
+    renderer.render(scene, camera); },
+  probe: () => { const pp=new THREE.Vector3(); camera.getWorldPosition(pp);
+    const f = facingDir();
+    const out = { swingT, pending: pendingHits.length, facing:[+f.x.toFixed(2),+f.z.toFixed(2)], cam:[+pp.x.toFixed(1),+pp.z.toFixed(1)] };
+    if (boss.g){ const to = boss.g.position.clone().sub(pp); to.y=0;
+      out.bossDist = +to.length().toFixed(2); out.bossAng = +to.clone().normalize().angleTo(f).toFixed(2); out.bossHp = boss.hp; }
+    return out; },
+  shardDbg: () => { const pp=new THREE.Vector3(); camera.getWorldPosition(pp);
+    return shards.map(s=>({got:s.got, at:[+s.m.position.x.toFixed(1),+s.m.position.y.toFixed(1),+s.m.position.z.toFixed(1)],
+      d:+pp.distanceTo(s.m.position).toFixed(2), cam:[+pp.x.toFixed(1),+pp.y.toFixed(1),+pp.z.toFixed(1)] })); },
+  enemyPositions: () => enemies.filter(e=>!e.dead).map(e=>[ +e.g.position.x.toFixed(1), +e.g.position.z.toFixed(1) ]),
+};
+window.__ready = true;
+</script>
+</body>
+</html>
