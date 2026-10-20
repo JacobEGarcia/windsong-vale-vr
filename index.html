@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>WINDSONG VALE - a painterly valley adventure in VR</title>
 <meta name="description" content="A hand-painted, Ghibli-inspired 3D valley to explore - on desktop and in Quest VR. Restore the three sun shards, wake the shrine bell.">
@@ -567,7 +568,7 @@ document.getElementById('mute').onclick = () => {
 // ---------- player ----------
 const player = {
   pos: new THREE.Vector3(0, 0, 62),
-  yaw: Math.PI,            // facing -z (north, toward the vale)
+  yaw: 0,                  // camera looks -z (north, toward the vale and the wisp)
   pitch: 0, vy: 0,
   hearts: 3, shards: 0, lastHurt: -99, swings:0, hitsTaken:0,
   speed: 5.2, started: false, dead: false,
@@ -591,9 +592,12 @@ sword.position.set(0.34,-0.36,-0.6);
 const SWORD_REST = [-0.85,-0.2,-0.18];
 sword.rotation.set(...SWORD_REST);
 camera.add(sword);
-let swingT = -1;
+let swingT = -1, lastSwingAt = -9;
 function swing() {
   if (swingT >= 0 || player.dead) return false;
+  const now = performance.now()/1000;
+  if (now - lastSwingAt < 0.45) return false;    // cooldown: trigger + arm-velocity can't double-fire
+  lastSwingAt = now;
   swingT = 0; player.swings++; sfx.swing();
   return true;
 }
@@ -625,14 +629,14 @@ const vrBtn = VRButton.createButton(renderer);
 document.getElementById('vrbutton-holder').appendChild(vrBtn);
 vrBtn.style.cssText += ';position:static !important;margin:0 !important;';
 let vrSword = null, lastSwingVel = 0, prevCtrlPos = null;
+let vrBound = false;
 renderer.xr.addEventListener('sessionstart', () => {
   sword.visible = false;
   const ctrl = renderer.xr.getController(1);      // right hand
   if (!vrSword) { vrSword = sword.clone(); }
   ctrl.add(vrSword); vrSword.position.set(0,0,-0.02); vrSword.rotation.set(-0.9,0,0);
-  ctrl.addEventListener('selectstart', () => swing());
-  rig.position.copy(player.pos); rig.position.y = eyeY() - 1.62 + 0; // rig at feet-ish; camera local handles eye
-  rig.position.y = terrainH(player.pos.x, player.pos.z);
+  if (!vrBound) { ctrl.addEventListener('selectstart', () => swing()); vrBound = true; }
+  rig.position.set(player.pos.x, terrainH(player.pos.x, player.pos.z), player.pos.z);
   startGame();
 });
 renderer.xr.addEventListener('sessionend', () => {
@@ -788,7 +792,7 @@ function hurtPlayer(from){
   if (from){ const push = player.pos.clone().sub(from).setY(0).normalize().multiplyScalar(2.2); player.pos.add(push); }
   if (player.hearts <= 0){
     player.hearts = 3; updateHearts();
-    player.pos.set(0,0,62); player.yaw = Math.PI;
+    player.pos.set(0,0,62); player.yaw = 0;   // face north into the vale, not the gate
     toast('The vale catches you gently... back at the meadow gate.', 4200);
   }
 }
@@ -836,6 +840,7 @@ function winGame(){
   shrine.userData.bell.rotation.z = 0.3;
   const glow = new THREE.PointLight(0xffe9a8, 60, 60);
   glow.position.copy(shrine.position).add(new THREE.Vector3(0,6,0)); scene.add(glow);
+  objEl.textContent = 'The bell rings again - the vale sings.';
   const t = Math.floor((performance.now()-startTime)/1000);
   const mm = Math.floor(t/60), ss = String(t%60).padStart(2,'0');
   document.getElementById('winstats').innerHTML =
@@ -851,6 +856,7 @@ function winGame(){
 
 // ---------- movement ----------
 const tmpV = new THREE.Vector3();
+const _pp = new THREE.Vector3(), _to = new THREE.Vector3(), _mv = new THREE.Vector3(), _ctrlP = new THREE.Vector3();
 function collide(p){
   for (const c of colliders){
     const dx = p.x-c.x, dz = p.z-c.z, d = Math.hypot(dx,dz);
@@ -872,7 +878,8 @@ function updatePlayer(dt){
     if (session) for (const src of session.inputSources){
       if (!src.gamepad) continue;
       const ax = src.gamepad.axes;
-      const x = ax[2] ?? ax[0] ?? 0, y = ax[3] ?? ax[1] ?? 0;
+      const dz = (v) => Math.abs(v) < 0.15 ? 0 : v;   // stick deadzone
+      const x = dz(ax[2] ?? ax[0] ?? 0), y = dz(ax[3] ?? ax[1] ?? 0);
       if (src.handedness === 'left'){ mx = x; mz = y; }
       if (src.handedness === 'right'){
         if (Math.abs(x) > 0.7 && !snapLatch){ player.yaw -= Math.sign(x)*Math.PI/4; snapLatch = true; }
@@ -906,29 +913,31 @@ function getHeadsetYaw(){
 function updateVRSwing(dt){
   if (!renderer.xr.isPresenting) return;
   const ctrl = renderer.xr.getController(1);
-  const p = new THREE.Vector3(); ctrl.getWorldPosition(p);
+  ctrl.getWorldPosition(_ctrlP);
   if (prevCtrlPos){
-    const vel = p.distanceTo(prevCtrlPos)/Math.max(dt,1e-4);
+    const vel = _ctrlP.distanceTo(prevCtrlPos)/Math.max(dt,1e-4);
     if (vel > 2.4 && lastSwingVel <= 2.4) swing();
     lastSwingVel = vel;
   }
-  prevCtrlPos = p.clone();
+  if (!prevCtrlPos) prevCtrlPos = new THREE.Vector3();
+  prevCtrlPos.copy(_ctrlP);
 }
 
 // ---------- enemies / boss update ----------
 function updateEnemies(dt, t){
-  const pp = new THREE.Vector3(); camera.getWorldPosition(pp);
+  camera.getWorldPosition(_pp);
   for (const e of enemies){
     if (e.dead) continue;
     const g = e.g;
-    const toP = pp.clone().sub(g.position); toP.y = 0;
-    const dist = toP.length();
+    _to.copy(_pp).sub(g.position); _to.y = 0;
+    const dist = _to.length();
     e.lungeCd -= dt;
     if (e.flash > 0){ e.flash -= dt; g.children[0].material.emissive = new THREE.Color(0xffffff); g.children[0].material.emissiveIntensity = e.flash*4; }
     if (dist < 13 && dist > 1.5 && e.lungeCd <= -0.6){
       e.state = 'chase';
-      g.position.add(toP.normalize().multiplyScalar((e.elite?2.7:2.2)*dt));
-      g.lookAt(pp.x, g.position.y, pp.z);
+      _mv.copy(_to).normalize().multiplyScalar((e.elite?2.7:2.2)*dt);
+      g.position.add(_mv); collide(g.position);   // stay out of trees/houses
+      g.lookAt(_pp.x, g.position.y, _pp.z);
     } else if (dist <= 1.9 && e.lungeCd <= 0){
       e.lungeCd = 2.2;
       hurtPlayer(g.position);
@@ -951,29 +960,33 @@ function updateEnemies(dt, t){
 }
 function updateBoss(dt, t){
   if (!boss.active || boss.dead) return;
-  const g = boss.g, pp = new THREE.Vector3(); camera.getWorldPosition(pp);
-  const toP = pp.clone().sub(g.position); toP.y = 0;
-  const dist = toP.length();
+  const g = boss.g; camera.getWorldPosition(_pp);
+  _to.copy(_pp).sub(g.position); _to.y = 0;
+  const dist = _to.length();
   boss.cd -= dt;
   if (boss.chargeT > 0){
     boss.chargeT -= dt;
-    g.position.add(boss.chargeDir.clone().multiplyScalar(13*dt));
+    _mv.copy(boss.chargeDir).multiplyScalar(13*dt);
+    g.position.add(_mv); collide(g.position);
     if (dist < 3.0 && player.lastHurt < performance.now()/1000 - 1.0) hurtPlayer(g.position);
   } else if (boss.cd <= 0 && dist < 16){
-    boss.cd = 6; boss.chargeT = 0.75; boss.chargeDir = toP.clone().normalize();
+    boss.cd = 6; boss.chargeT = 0.75;
+    if (!boss.chargeDir) boss.chargeDir = new THREE.Vector3();
+    boss.chargeDir.copy(_to).normalize();
     chime(98, 0.8, 0.2, 'sawtooth');
     toast('Bramblehorn charges!', 1400);
   } else if (dist > 4.5){
-    g.position.add(toP.normalize().multiplyScalar(2.6*dt));
+    _mv.copy(_to).normalize().multiplyScalar(2.6*dt);
+    g.position.add(_mv); collide(g.position);
   }
   g.position.y = terrainH(g.position.x, g.position.z) + Math.sin(t*1.2)*0.1;
-  g.lookAt(pp.x, g.position.y, pp.z);
+  g.lookAt(_pp.x, g.position.y, _pp.z);
 }
 
 // ---------- shards / shrine ----------
 let shardsPlaced = false;
 function updateShards(t){
-  const pp = new THREE.Vector3(); camera.getWorldPosition(pp);
+  camera.getWorldPosition(_pp); const pp = _pp;
   for (const s of shards){
     if (s.got) continue;
     s.m.rotation.y = t*1.4; s.m.position.y = s.baseY + Math.sin(t*2+s.x)*0.15;
